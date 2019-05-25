@@ -11,6 +11,8 @@ import threading
 import xpinyin
 import select
 import sys
+import socket
+import operator
 
 import mySerial
 import warnmsgbox
@@ -23,7 +25,7 @@ class Windows(object):
         self.root = tk.Tk()
         # 给主窗口设置标题内容
         self.root.update()
-        self.RootWidth = self.root.winfo_screenwidth() * 2 / 5
+        self.RootWidth = self.root.winfo_screenwidth() * 3 / 5
         self.RootHeight = self.root.winfo_screenheight() * 2 / 5
         self.Root_xoffset = self.root.winfo_x()
         self.Root_yoffset = self.root.winfo_y()
@@ -32,13 +34,12 @@ class Windows(object):
         self.messagebox_exits = False
         self.warn = warnmsgbox.WarnBox()
         self.warn.SetRootSize(self.RootWidth, self.RootHeight, self.Root_xoffset, self.Root_yoffset)
-        
+  
         self.root.title('地锁串口工具')
         set_screen_string = "%dx%d" % (self.RootWidth, self.RootHeight)
         self.root.geometry(set_screen_string)
         self.root.resizable(width=False, height=False)
 
-        #combox_value_list = list(port_list.comports())
         combox_value_list = mySerial.getDevList()
         for p in combox_value_list:
           print(p)
@@ -84,19 +85,23 @@ class Windows(object):
         
         # 参考自https://cloud.tencent.com/developer/ask/130543
         # 参考自https://www.cnblogs.com/qwangxiao/p/9940972.html
-        clos = ('DeviceID', 'Status', 'CMD', 'CmdStatus', 'yichang', 'online')
+        clos = ('DeviceID', 'Status', 'CMD', 'CmdStatus', 'Beep','Battery','HaveCar','UltraSafeDistance','UltraCheckTime','UltraCheckDistance','HeartTime')
         self.display_info = ttk.Treeview(self.root, columns=clos, show='headings')
         for col in clos:
             self.display_info.heading(col, text=col)
-            
         # 设置列的宽度和对齐方式
-        self.display_info.column('0', width=60, anchor='center')
-        self.display_info.column('1', width=60, anchor='center')
-        self.display_info.column('2', width=60, anchor='center')
-        self.display_info.column('3', width=60, anchor='center')
-        self.display_info.column('4', width=60, anchor='center')
-        self.display_info.column('5', width=60, anchor='center')
-
+        self.display_info.column('0', width=50, anchor='center')
+        self.display_info.column('1', width=30, anchor='center')
+        self.display_info.column('2', width=20, anchor='center')
+        self.display_info.column('3', width=50, anchor='center')
+        self.display_info.column('4', width=30, anchor='center')
+        self.display_info.column('5', width=40, anchor='center')
+        self.display_info.column('6', width=40, anchor='center')
+        self.display_info.column('7', width=60, anchor='center')
+        self.display_info.column('8', width=60, anchor='center')
+        self.display_info.column('9', width=60, anchor='center')
+        self.display_info.column('10', width=60, anchor='center')
+        
         # 创建刷新显示的线程
         t1 = threading.Thread(target=self.ThreadUpdateDisplay, args=())
         t1.setDaemon(True)
@@ -129,6 +134,7 @@ class Windows(object):
       
     def serial_open(self):
       if mySerial.open():
+        mySerial.StartRecvice()
         self.sendbox_devid_label.__setitem__('state', 'normal')
         self.sendbox_devid_entry.__setitem__('state', 'normal')
         self.sendbox_cmd_label.__setitem__('state', 'normal')
@@ -140,6 +146,7 @@ class Windows(object):
         self.sendbox_button.__setitem__('state', 'normal')
       else:
         print('open serial failed')
+        
     def serial_close(self):
       mySerial.close()
       self.sendbox_devid_label.__setitem__('state', 'disabled')
@@ -177,51 +184,131 @@ class Windows(object):
       mySerial.send(msgid, msgcmd, msgpar, msgidentify)
       
     def ThreadUpdateDisplay(self):
+        socketid = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        ipport = ('127.0.0.1', 9876)
+        socketid.bind(ipport)
+        socketid.listen(5)
+        
         display_len = 0
+        display_list_info = []
         ret_list = []
+        inputs = [socketid, ]
+        outputs = []
         while True:
             display_list_info = []
-
-            if ret_list:
-                if len(ret_list) != display_len:
-                    display_len = len(ret_list)
-                    ret_list.sort(key=lambda e: e[1], reverse=True)
-                    alreadyExitsItem = self.display_info.get_children()
-
-                    for new_item in ret_list:  # 从数据库的数据中提取出一条信息
-                        isInDisplay = False
-                        new_item_name = '%s' % new_item[1]  # 获取名字信息
-                        for item in alreadyExitsItem:  # 从显示列表中提取一条信息
-                            item_text = self.display_info.item(item, "values")
-                            # print(item_text[1])#输出所选行的第一列的值
-                            item_name = '%s' % item_text[1]  # 获取显示的名字信息
-                            result = cmp(item_name, new_item_name)
-                            if result == 0:
-                                isInDisplay = True
-                                break
-                        if isInDisplay == False:
-                            display_list_info.append(new_item)
-                            # 将获取到的商品名加入到goodsNameList中，不能重复加入，并将名称转换为拼音
-                            unicode_name = u'%s' % new_item_name
-                            # print unicode_name
-                            name_pinyin = xpinyin.Pinyin().get_pinyin(unicode_name)
-                            # print 'pinyin =%s' % ret
-                            self.goodsNameList.append([new_item_name, name_pinyin])
-                            # print self.goodsNameList
-
-            # print display_list_info
-            if display_list_info:
-                for item in display_list_info:
-                    self.display_info.insert("", "end", values=item)
-
-            time.sleep(1)
+            readable,writeable,exceptional = select.select(inputs, outputs, inputs, 0)
+            if not readable:
+              continue
+            for r in readable:
+              if r is socketid:
+                conn,addr = r.accept()
+                print('new connect')
+                conn.setblocking(False)
+                inputs.append(conn)
+              else:
+                try:
+                  recv_bytes = r.recv(1024)
+                except:
+                  print('recv except')
+                else:
+                  if recv_bytes:
+                    recv_string = str(recv_bytes, encoding='utf-8')
+                    print('recv:%s' % recv_string)
+                    recv_list = recv_string.split('-')
+                    mType = recv_list[0]
+                    if mType == 'Ctrl':
+                      mId = recv_list[1]
+                      mCmd = recv_list[2]
+                      mParamter = recv_list[3]
+                      mIdentify = recv_list[4]
+                      item = [mId, 0, mCmd, 0, 0, mIdentify]
+                      self.display_info.insert("", 0, values=item)
+                    else: # 'Resp'
+                      mId = recv_list[1]
+                      mCmd = recv_list[2]
+                      mResp = recv_list[3]
+                      mIdentify = recv_list[4]
+                      isInDisplay = False
+                      
+                      item = []
+                      alreadyExitsItem = self.display_info.get_children()
+                      if alreadyExitsItem:
+                        print('alreadyExitsItem')
+                        for tmp in alreadyExitsItem:
+                          item_id = self.display_info.set(tmp, column='DeviceID')
+                          if operator.eq(item_id, mId):
+                            #print('find same id')
+                            item = tmp
+                            isInDisplay = True
+                            break
+                      #print('one:')
+                      #print(item)
+                      if not item:
+                        #print('add new item')
+                        self.display_info.insert("", 'end', values=item)
+                        itemtuple = self.display_info.get_children()
+                        for tmp in itemtuple:
+                          print(tmp)
+                        item = tmp
+                          
+                      #print('two:')
+                      #print(item)
+                      #print(mCmd)
+                      if mCmd in ['1', '2', '3', '102']:
+                        #print('set cmd 123')
+                        self.display_info.set(item, column='Status', value=mResp)
+                        print(item)
+                      elif mCmd in ['4','5','6']:
+                        if mResp == '0':
+                          self.display_info.set(item, column='Beep', value='On')
+                        else:
+                          self.display_info.set(item, column='Beep', value='Off')
+                      elif mCmd in ['7', '101']:
+                        self.display_info.set(item, column='Battery', value=mResp)
+                      elif mCmd == 8:
+                        if mResp == '0':
+                          self.display_info.set(item, column='HaveCar', value='Y')
+                        else:
+                          self.display_info.set(item, column='HaveCar', value='N')
+                      elif mCmd == '15':
+                        resp = int(mResp, 16)
+                        if (resp & 0xf0) == 0x10:
+                          self.display_info.set(item, column='HaveCar', value='Y')
+                        else:
+                          self.display_info.set(item, column='HaveCar', value='N')
+                        self.display_info.set(item, column='HaveCar', value=resp & 0x0f)
+                      #elif mCmd in ['9', '10']:
+                        
+                      #elif mCmd in ['11', '12']:
+                        
+                      #elif mCmd == '14':
+                        
+                      #elif mCmd in ['16', '17']:
+                      
+                      self.display_info.set(item, column='CMD', value=mCmd)
+                      
+                      if isInDisplay:
+                        item_cmd = self.display_info.set(item, column='CMD')
+                        if operator.eq(mCmd, item_cmd):
+                          self.display_info.set(item, column='CmdStatus', value='OK')
+                        else:
+                          self.display_info.set(item, column='CmdStatus', value='ERR')
+                      else:
+                        self.display_info.set(item, column='DeviceID', value=mId)
+                        
+                      #  print('add new item')
+                      #  print(item)
+                      #  self.display_info.insert("", 'end', values=item) #0添加到头部,'end'添加到尾部
+                  else:
+                    r.close()
+                    print('client close')
 
 
     def test_input_is_digit(self, content):
         # 如果不加上==""的话，就会发现删不完。总会剩下一个数字
         rule = r"^[0-9]+\.?[0-9]?$"
         ret = re.match(rule, content)
-        print(content)
+        #print(content)
         if ret or content == "":
             # if content.isdigit() or content == "":
             #if int(content, 16) > 0xffff:
@@ -297,6 +384,8 @@ class Windows(object):
         # 底部留出20空余空间
         display_height = self.RootHeight - 20;
         self.display_info.place(x=display_start_x, y=display_start_y, width=display_width, height=display_height)
+        
+        
 
 def main():
     # 初始化对象

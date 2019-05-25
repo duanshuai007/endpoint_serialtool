@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-#-*- coding:utf-8 -*-
+# -*- coding:utf-8 -*-
 
 import serial
 import threading
@@ -10,6 +10,7 @@ import queue
 import serial.tools.list_ports as port_list
 import operator
 import crc
+import socket
 
 serial_name = None
 serial_baud = None
@@ -75,7 +76,7 @@ def open():
     try:
       serial_fd = serial.Serial(name, baudrate=baud, bytesize=dbits, parity=parity, stopbits=sbits, timeout=1)
       #self.serial = serial.Serial(name, baudrate=baud, bytesize=serial.EIGHTBITS, parity=serial.PARITY_NONE, stopbits=serial.STOPBITS_ONE, timeout=1)
-      print(serial_fd)
+      print('open serial: %s ' % serial_fd)
       ret = True
     except Exception as e:
       print('open serial failed')
@@ -126,7 +127,96 @@ def send(msgid, msgcmd, msgpar, msgidentify):
         serial_fd.write(bytes([val]))
     print(" ")
     serial_fd.flush()
-  
+    
+#>>> a = 'aabbccddeeff'
+#>>> a_bytes = bytes.fromhex(a)   hex字符串转换为bytes
+#b'\xaa\xbb\xcc\xdd\xee\xff'      bytes转换为hex字符串
+#>>> aa = a_bytes.hex() 
+def StartRecvice():
+    global serial_fd
+    p = threading.Thread(target = ReadDataThread, args = [serial_fd, ])
+    p.setDaemon(True)
+    p.start()
+    
+#从串口接收数据，然后发送给主窗口
+def ReadDataThread(serialid):
+    print('ReadDataThread: %s ' % serialid)
+    #print(socketid)
+    msglen = 0
+    ch_list = []
+    timeout_count = 0
+    
+    socketid = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    ipport = ('127.0.0.1', 9876)
+    socketid.connect(ipport)
+    
+    while True:
+        try:
+            if serialid.isOpen():
+                num = serialid.inWaiting()
+                if num > 0:
+                  ch = serialid.read(1).hex()
+                  ch = int(ch, 16)
+                  #print('ch=%x' % ch)
+                  #print(type(ch))
+                  if msglen > 0:
+                      ch_list.append(ch)
+                      msglen = msglen + 1
+                  if ch == 0xa5 and msglen == 0:
+                      msglen = 1
+                      ch_list = [ch, ]
+                  #print(msglen)
+                  #节点接收到服务器控制命令，长度12
+                  #服务器接收到节点响应信息，长度13
+                  if msglen == 12 or msglen == 13:
+                      #print('msglen=%d' % msglen)
+                      if ch == 0x5a:
+                        check_crc = []
+                        for i in range(msglen-3):
+                          check_crc.append(ch_list[i])
+                        #print(check_crc)
+                        crcval = crc.calc_senddata(check_crc)
+                        print('crcval=%x' % crcval)
+                        if crcval == ch_list[msglen-3] | (ch_list[msglen-2] << 8):
+                          print('crc right')
+                          mId = check_crc[2] | (check_crc[3] << 8)
+                          mCmd = check_crc[4]
+                          if msglen == 12:
+                            #解析服务器的控制命令
+                            #格式:HEAD LEN/PAR ID_L ID_H CMD I4 I3 I2 I1
+                            mType = 'Ctrl'
+                            mIdentify = check_crc[5] | (check_crc[6] << 8) | (check_crc[7] << 16) | (check_crc[8] << 24)
+                            mParamter = 0
+                            #将结果信息发送给主窗口
+                            sendstr = '%s-%x-%x-%x-%x' % (mType, mId, mCmd, mParamter, mIdentify)
+                            sendbytes = bytes(sendstr, encoding='utf-8')  #bytes将字符串转换为bytes
+                                                                          #str将bytes转换为字符串
+                            socketid.send(sendbytes)
+                          else :
+                            #解析地锁发送来的响应信息
+                            #格式:HEAD LEN ID_L ID_H CMD RESP I4 I3 I2 I1
+                            mType = 'Resp'
+                            mIdentify = check_crc[6] | (check_crc[7] << 8) | (check_crc[8] << 16) | (check_crc[9] << 24)
+                            mResp = check_crc[5]
+                            #将结果信息发送给主窗口
+                            sendstr = '%s-%x-%x-%x-%x' % (mType, mId, mCmd, mResp, mIdentify)
+                            sendbytes = bytes(sendstr, encoding='utf-8')
+                            socketid.send(sendbytes)
+                          msglen = 0
+                        else:
+                          msglen = 0
+                          print('crc error')
+                      if msglen == 13:
+                        msglen = 0
+                time.sleep(0.01)
+            else:
+                print('child ReadDataThread exit')
+                return
+        except Exception as e:
+            print(e.args)
+            time.sleep(1)
+
+
 def serial_data_process(serial):
     inputs = [serial,]
     outputs = []
@@ -138,6 +228,7 @@ def serial_data_process(serial):
     recv_count = 0
     all_count = 0
 
+    
     while True:
         readable,writeable,exceptional = select.select(inputs, outputs, inputs, 1)
         if not (readable or writeable or exceptional):
@@ -185,5 +276,12 @@ def serial_data_process(serial):
 
 
 if __name__ == '__main__':
-    serial_data_process(serial)
+    getSerialName('COM9 - system')
+    getSerialBaud('115200')
+    getSerialDatabits('8')
+    getSerialStopbits('1')
+    getSerialParity('NONE')
+    open()
+    StartRecvice(1)
+    #serial_data_process(serial)
 

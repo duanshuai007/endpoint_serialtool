@@ -23,8 +23,8 @@ def calc_senddata(str_list):
     if strlen != 9 and strlen != 10:
         return 0
         
-    #print(strlen)
-    #print(str_list)
+    print(strlen)
+    print(str_list)
     
     wCRCin = 0x0000
     wCPoly = 0x8005
