@@ -14,6 +14,7 @@ class LoraConfig(object):
     self.Root_xoffset = 0
     self.Root_yoffset = 0
     
+    self.root = None
     self.baud = ''
     self.parity = ''
     self.speed = ''
@@ -45,21 +46,23 @@ class LoraConfig(object):
     #设置新窗口在主窗口的中间
     scrrenid.update()
     width = 460
-    height = 180
+    height = 160
     self.Root_xoffset = scrrenid.winfo_x()
     self.Root_yoffset = scrrenid.winfo_y()
     win_width = ((self.RootWidth - width) / 2) + self.Root_xoffset
     win_height = ((self.RootHeight - height) / 2) + self.Root_yoffset
     size_str = '%dx%d+%d+%d' % (width, height, win_width, win_height)
 
-    win = tk.Toplevel(scrrenid)
-    win.geometry(size_str)
-    win.resizable(width=False, height=False)
+    self.root = tk.Toplevel(scrrenid)
+    self.root.geometry(size_str)
+    self.root.resizable(width=False, height=False)
     #设置右上角的X功能
-    win.protocol("WM_DELETE_WINDOW", lambda arg=win: self.FuncButtonCancel(arg))
+    self.root.protocol("WM_DELETE_WINDOW", lambda arg=self.root: self.FuncButtonCancel(arg))
     #设置窗口始终在最上层
-    win.wm_attributes("-topmost", 1)
-    win.title("Lora Config")
+    self.root.wm_attributes("-topmost", 1)
+    self.root.title("Lora Config")
+
+    self.warn = warnmsgbox.WarnBox()
 
     combox_baud = [1200, 2400, 4800, 9600, 19200, 38400, 57600, 115200]
     combox_parity = ['8N1', '8O1', '8E1']
@@ -70,49 +73,49 @@ class LoraConfig(object):
     combox_wakeuptime = ['250ms', '500ms', '750ms', '1000ms', '1250ms', '1500ms', '1750ms', '2000ms']
     combox_iomode = ['开漏', '推挽']
     
-    self.baud_label = tk.Label(win, text='波特率')
-    self.baud_combox = ttk.Combobox(win, values=combox_baud)
+    self.baud_label = tk.Label(self.root, text='波特率')
+    self.baud_combox = ttk.Combobox(self.root, values=combox_baud)
     self.baud_combox.bind("<<ComboboxSelected>>", self.select_baud)
     
-    self.parity_label = tk.Label(win, text='校验位')
-    self.parity_combox = ttk.Combobox(win, values=combox_parity)
+    self.parity_label = tk.Label(self.root, text='校验位')
+    self.parity_combox = ttk.Combobox(self.root, values=combox_parity)
     self.parity_combox.bind("<<ComboboxSelected>>", self.select_parity)
     
-    self.speed_label = tk.Label(win, text='空中速率')
-    self.speed_combox = ttk.Combobox(win, values=combox_speed)
+    self.speed_label = tk.Label(self.root, text='空中速率')
+    self.speed_combox = ttk.Combobox(self.root, values=combox_speed)
     self.speed_combox.bind("<<ComboboxSelected>>", self.select_speed)
     
-    self.senddb_label = tk.Label(win, text='发射功率')
-    self.senddb_combox = ttk.Combobox(win, values=combox_senddb)
+    self.senddb_label = tk.Label(self.root, text='发射功率')
+    self.senddb_combox = ttk.Combobox(self.root, values=combox_senddb)
     self.senddb_combox.bind("<<ComboboxSelected>>", self.select_senddb)
     
-    self.crc_label = tk.Label(win, text='前向纠错')
-    self.crc_combox = ttk.Combobox(win, values=combox_crc)
+    self.crc_label = tk.Label(self.root, text='前向纠错')
+    self.crc_combox = ttk.Combobox(self.root, values=combox_crc)
     self.crc_combox.bind("<<ComboboxSelected>>", self.select_crc)
     
-    self.sendmode_label = tk.Label(win, text='传输方式')
-    self.sendmode_combox = ttk.Combobox(win, values=combox_sendmode)
+    self.sendmode_label = tk.Label(self.root, text='传输方式')
+    self.sendmode_combox = ttk.Combobox(self.root, values=combox_sendmode)
     self.sendmode_combox.bind("<<ComboboxSelected>>", self.select_sendmode)
     
-    self.waketime_label = tk.Label(win, text='唤醒时间')
-    self.waketime_combox = ttk.Combobox(win, values=combox_wakeuptime)
+    self.waketime_label = tk.Label(self.root, text='唤醒时间')
+    self.waketime_combox = ttk.Combobox(self.root, values=combox_wakeuptime)
     self.waketime_combox.bind("<<ComboboxSelected>>", self.select_wakeuptime)
     
-    self.iomode_label = tk.Label(win, text='IO驱动')
-    self.iomode_combox = ttk.Combobox(win, values=combox_iomode)
+    self.iomode_label = tk.Label(self.root, text='IO驱动')
+    self.iomode_combox = ttk.Combobox(self.root, values=combox_iomode)
     self.iomode_combox.bind("<<ComboboxSelected>>", self.select_iomode)
     
-    test_cmd = win.register(self.test_input_is_digit)
-    self.addr_label = tk.Label(win, text='地址')
+    test_cmd = self.root.register(self.test_input_is_digit)
+    self.addr_label = tk.Label(self.root, text='地址')
     self.addr_string = tk.StringVar()
-    self.addr_entry = tk.Entry(win, textvariable=self.addr_string, validate='key', validatecommand=(test_cmd, '%P'))
+    self.addr_entry = tk.Entry(self.root, textvariable=self.addr_string, validate='key', validatecommand=(test_cmd, '%P'))
     
-    self.channel_label = tk.Label(win, text='信道')
+    self.channel_label = tk.Label(self.root, text='信道')
     self.channel_string = tk.StringVar()
-    self.channel_entry = tk.Entry(win, textvariable=self.channel_string, validate='key', validatecommand=(test_cmd, '%P'))
+    self.channel_entry = tk.Entry(self.root, textvariable=self.channel_string, validate='key', validatecommand=(test_cmd, '%P'))
     
-    self.writebutton = tk.Button(win, command=self.func_write, text='写入参数')
-    self.readbutton = tk.Button(win, command=self.func_read, text='读取参数')
+    self.writebutton = tk.Button(self.root, command=self.func_write, text='写入参数')
+    self.readbutton = tk.Button(self.root, command=self.func_read, text='读取参数')
     
     self.baud_label.grid(row=0, column=0, padx=1, pady=1)
     self.baud_combox.grid(row=0, column=1, padx=1, pady=1)
@@ -293,6 +296,9 @@ class LoraConfig(object):
   def func_read(self):
     #print('read')
     parlist = mySerial.getParamter()
+    if not parlist:
+      self.warn.ShowMessageBox(self.root, "未读取到有效数据")
+      return
     #print(parlist)
     addr = hex((parlist[1] << 8) | parlist[2])
     #print(addr)
